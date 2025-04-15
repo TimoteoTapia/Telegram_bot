@@ -2,6 +2,8 @@
 import logging
 import os
 import threading
+import signal
+import sys
 from flask import Flask
 from telegram.ext import (
     ApplicationBuilder,
@@ -9,23 +11,30 @@ from telegram.ext import (
     MessageHandler,
     CallbackQueryHandler,
     filters,
+    ConversationHandler,
 )
 from src.app.handlers import (
     start,
     handle_callback,
-    handle_schedule_appointment,
-    handle_cancel_appointment,
     handle_message,
+    CHOOSING_ACTION,
+    ENTERING_DATE,
+    CONFIRMING_DATE,
+    ENTERING_NAME,
+    SELECTING_EVENT,
+    ENTERING_NEW_DATE,
 )
 from src.app.config import TELEGRAM_BOT_TOKEN
 
-# Configuración de logging
+# Configure logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
-# Flask app para mantener vivo el servicio en Render
+# Flask app to keep service alive on Render
 flask_app = Flask(__name__)
+telegram_app = None
 
 
 @flask_app.route("/")
@@ -33,28 +42,70 @@ def home():
     return "Bot is running on Render!"
 
 
+# Signal handler for graceful shutdown
+def signal_handler(sig, frame):
+    print("Shutting down gracefully...")
+    if telegram_app:
+        # Stop the telegram application
+        telegram_app.stop()
+    sys.exit(0)
+
+
 def run_flask():
-    port = int(os.environ.get("PORT", 5000))  # Render define el puerto aquí
+    port = int(os.environ.get("PORT", 5000))
     flask_app.run(host="0.0.0.0", port=port)
 
 
 def run_bot():
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    global telegram_app
+    telegram_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Registra los handlers importados
-    app.add_handler(CallbackQueryHandler(handle_cancel_appointment, pattern="cancelar"))
-    app.add_handler(
-        CallbackQueryHandler(handle_schedule_appointment, pattern="agendar")
+    # Define conversation handler
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            CHOOSING_ACTION: [
+                CallbackQueryHandler(handle_callback),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message),
+            ],
+            ENTERING_DATE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message),
+            ],
+            CONFIRMING_DATE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message),
+            ],
+            ENTERING_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message),
+            ],
+            SELECTING_EVENT: [
+                CallbackQueryHandler(handle_callback),
+            ],
+            ENTERING_NEW_DATE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message),
+            ],
+        },
+        fallbacks=[CommandHandler("start", start)],
     )
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Bot is running...")
-    app.run_polling()
+    # Add the conversation handler
+    telegram_app.add_handler(conv_handler)
+
+    # Add a fallback handler for general messages
+    telegram_app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+    )
+
+    logger.info("Bot is running...")
+    telegram_app.run_polling()
 
 
 if __name__ == "__main__":
-    # Ejecuta el bot y Flask en hilos paralelos
-    threading.Thread(target=run_flask).start()
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    # Start the Flask app in a separate thread
+    threading.Thread(target=run_flask, daemon=True).start()
+
+    # Run the Telegram bot in the main thread
     run_bot()
