@@ -1,8 +1,5 @@
 # telegram_app.py
 import logging
-import os
-import threading
-from flask import Flask
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -24,21 +21,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 
-# Flask app para mantener vivo el servicio en Render
-flask_app = Flask(__name__)
 
-
-@flask_app.route("/")
-def home():
-    return "Bot is running on Render!"
-
-
-def run_flask():
-    port = int(os.environ.get("PORT", 5000))  # Render define el puerto aquí
-    flask_app.run(host="0.0.0.0", port=port)
-
-
-def run_bot():
+def main():
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
     # Registra los handlers importados
@@ -55,6 +39,4 @@ def run_bot():
 
 
 if __name__ == "__main__":
-    # Ejecuta el bot y Flask en hilos paralelos
-    threading.Thread(target=run_flask).start()
-    run_bot()
+    main()

@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: telegram-chatbot
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: poetry install
+    startCommand: poetry run python telegram_app.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: GOOGLE_CALENDAR_ID
+        sync: false
+      - key: TIMEZONE
+        sync: false
